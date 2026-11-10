@@ -9,6 +9,25 @@ export const rooms = [
   {name:'Varanda',box:[-7,3.5,14,2.45],eye:[4.46,1.57,4.19],target:[-2.15,1.07,5.60],fov:63}
 ];
 
+// Positions along the clear route from each viewpoint to the hall.
+const hall=[-1.24,.45], livingPassage=[-1.24,2.92];
+const routes=[
+  [livingPassage],
+  [[1.53,-.19],[1.36,.45]],
+  [[-2.04,-.29],[-2.04,.24]],
+  [[-.58,-1.15],[-.58,-.42]],
+  [[4.40,4.16],[-1.30,4.17],[-1.30,3.20],livingPassage]
+];
+
+export function roomRoute(from,to){
+  const start=routes[from], end=routes[to];
+  let a=start.length,b=end.length;
+  // Skip the hall when both rooms share part of the same route.
+  while(a&&b&&start[a-1]===end[b-1]){a--;b--;}
+  const join=a===start.length?hall:start[a];
+  return [...start.slice(0,a),join,...end.slice(0,b).reverse()];
+}
+
 export function layoutFor(unit){
   const flip=unit.variant===1?-1:1, width=[.9,1,1.1][unit.variant], depth=[.94,1,1.07][unit.variant];
   return {flip,width,depth,point:([x,y,z])=>[x*flip*width,y,z*depth]};
