@@ -1,6 +1,6 @@
 import * as T from './vendor/three.module.js';
 import {makeCity,units} from './city.js';
-import {makeInterior,layoutFor,rooms,roomRoute} from './interior.js';
+import {makeInterior,layoutFor,rooms} from './interior.js';
 
 import {makeFloorPlan} from './floorplan.js';
 
@@ -13,7 +13,7 @@ let scenesWithShadows=new WeakSet();
 let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
 let renderer, camera, city, scene, unit=null, active=0, layout=null;
-let pose, goal, frame=0, tooltipTimer, flight=null, walk=null, queuedRoom=null;
+let pose, goal, frame=0, tooltipTimer, flight=null;
 const veil=$('veil');
 const ray=new T.Raycaster(), cursor=new T.Vector2();
 const pointers=new Map();
@@ -58,7 +58,6 @@ function placeCamera(view){
 function render(time){
   frame=0;
   if(flight){advanceFlight(time);return;}
-  if(walk){advanceWalk(time);return;}
   let moving=false;
   for(const key of Object.keys(goal)){
     const d=goal[key]-pose[key];
@@ -88,7 +87,7 @@ function prepareFrame(time,moving){
 function resize(moving){
   const {clientWidth:w,clientHeight:h}=viewport;
   if(!w||!h)return;
-  const idleRatio=Math.min(devicePixelRatio,1.65,Math.sqrt(2200000/(w*h)));
+  const idleRatio=Math.min(Math.max(1.18,devicePixelRatio),1.8,Math.sqrt(2800000/(w*h)));
   const ratio=moving?Math.min(idleRatio,motionQuality*Math.min(devicePixelRatio,1.2,Math.sqrt(1100000/(w*h)))):idleRatio;
   if(w===viewWidth&&h===viewHeight&&ratio===pixelRatio)return;
   viewWidth=w;viewHeight=h;pixelRatio=ratio;
@@ -113,9 +112,7 @@ function setScene(name,meta){
 function setRoom(index,initial=false){
   if(flight&&!initial)return;
   const next=clamp(index,0,rooms.length-1);
-  if(walk){queuedRoom=next;return;}
   if(next===active&&!initial)return;
-  const previous=active;
   active=next;
   floorPlan.select(active);
   $('prev').disabled=active===0;
@@ -123,48 +120,12 @@ function setRoom(index,initial=false){
   $('step').textContent=rooms[active].name;
   setScene('');
   clearTooltip();
-  const destination=roomPose(active);
-  if(initial||reduced)setCamera(destination,true);
-  else startWalk(previous,active,destination);
-}
-function startWalk(from,to,destination){
-  const origin={...pose};
-  const points=[
-    new T.Vector3(origin.x,origin.y,origin.z),
-    ...roomRoute(from,to).map(([x,z])=>new T.Vector3(...layout.point([x,1.56,z]))),
-    new T.Vector3(destination.x,destination.y,destination.z)
-  ];
-  const path=new T.CurvePath();
-  for(let i=1;i<points.length;i++){
-    path.add(new T.LineCurve3(points[i-1],points[i]));
+  setCamera(roomPose(active),true);
+  if(!initial&&!reduced){
+    const canvas=renderer.domElement;
+    canvas.getAnimations().forEach(animation=>animation.cancel());
+    canvas.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'ease-out'});
   }
-  walk={path,origin,destination,start:performance.now(),duration:Math.max(850,path.getLength()*235)};
-  draw();
-}
-function advanceWalk(time){
-  const {path,origin,destination,start,duration}=walk;
-  const t=clamp((time-start)/duration,0,1);
-  // Ease the start and finish while keeping the route clear of walls.
-  const progress=t*t*(3-2*t);
-  const position=path.getPoint(progress);
-  const ahead=path.getPoint(Math.min(1,progress+.028));
-  const heading=Math.atan2(ahead.x-position.x,ahead.z-position.z);
-  const turnIn=smooth(clamp(t/.17,0,1));
-  const turnOut=smooth(clamp((t-.76)/.24,0,1));
-  const angle=(a,b,k)=>a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*k;
-  const yaw=angle(angle(origin.yaw,heading,turnIn),destination.yaw,turnOut);
-  const pitch=T.MathUtils.lerp(origin.pitch,destination.pitch,progress);
-  const radius=T.MathUtils.lerp(origin.radius,destination.radius,progress);
-  placeCamera(t===1?destination:{x:position.x,y:position.y,z:position.z,yaw,pitch,radius});
-  prepareFrame(time,t<1);
-  renderer.render(scene,camera);
-  if(t<1){draw();return;}
-  walk=null;
-  pose={...destination};
-  goal={...destination};
-  const next=queuedRoom;
-  queuedRoom=null;
-  if(next!==null)setRoom(next);
 }
 function enterUnit(chosen){
   const key=chosen.variant;
@@ -172,7 +133,7 @@ function enterUnit(chosen){
   unit=chosen;layout=layoutFor(unit);swap(interiors.get(key));
   $('overview').hidden=true;$('tour').hidden=false;
   document.body.classList.add('inside');
-  $('hint').querySelector('span').textContent='Arraste para olhar · Clique na planta para caminhar';
+  $('hint').querySelector('span').textContent='Arraste para olhar ao redor';
   renderer.domElement.setAttribute('aria-label','Interior 3D. Use a planta ou as setas para visitar os cômodos.');
   $('unitTitle').textContent=unit.id;
   $('unitInfo').textContent=`${unit.floor}º andar · ${unit.area} m² · Planta ${['A','B','C'][key]}`;
@@ -228,7 +189,7 @@ function openUnit(chosen,windowHit){
   draw();
 }
 function goBack(){
-  flight=null;walk=null;queuedRoom=null;veil.style.opacity=0;
+  flight=null;veil.style.opacity=0;
   unit=null;swap(city.scene);
   document.body.classList.remove('inside');
   $('hint').querySelector('span').innerHTML='Arraste para girar <b>·</b> Role para aproximar';
@@ -255,7 +216,7 @@ function showUnit(chosen,event){
   tooltip.style.top=`${clamp(event.clientY-rect.top-36,6,rect.height-35)}px`;
 }
 function zoom(factor){
-  if(flight||walk)return;
+  if(flight)return;
   goal.radius=clamp(goal.radius*factor,unit?42:33,unit?90:139);
   if(reduced)pose={...goal};draw();
 }
@@ -266,14 +227,14 @@ function installControls(){
   const canvas=renderer.domElement;
   canvas.setAttribute('aria-label','Maquete 3D. Use o acesso direto para visitar um apartamento pelo teclado.');
   canvas.addEventListener('pointerdown',event=>{
-    if(event.button!==0||flight||walk)return;
+    if(event.button!==0||flight)return;
     if(!pointers.size){dragged=false;firstPointer={x:event.clientX,y:event.clientY};}
     else dragged=true;
     pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener('pointermove',event=>{
-    if(flight||walk)return;
+    if(flight)return;
     const p=pointers.get(event.pointerId);
     if(p){
       const oldDistance=pointers.size===2?distance():0;
@@ -307,7 +268,7 @@ function installControls(){
   canvas.addEventListener('wheel',event=>{event.preventDefault();clearTooltip();zoom(Math.exp(clamp(event.deltaY,-180,180)*.0014));},{passive:false});
   $('zoomIn').addEventListener('click',()=>zoom(.81));
   $('zoomOut').addEventListener('click',()=>zoom(1.24));
-  $('reset').addEventListener('click',()=>{if(!flight&&!walk)setCamera(unit?roomPose(active):cityPose());});
+  $('reset').addEventListener('click',()=>{if(!flight)setCamera(unit?roomPose(active):cityPose());});
   select.addEventListener('change',()=>$('visit').disabled=!!flight||!select.value);
   $('visit').addEventListener('click',()=>openUnit(available.find(item=>item.id===select.value)));
   $('back').addEventListener('click',goBack);
@@ -324,7 +285,7 @@ function installControls(){
 }
 
 try{
-  renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
+  renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
   renderer.outputColorSpace=T.SRGBColorSpace;
   renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;renderer.shadowMap.autoUpdate=false;
