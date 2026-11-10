@@ -10,7 +10,7 @@ const status=$('status'), reduced=matchMedia('(prefers-reduced-motion: reduce)')
 const available=units.filter(unit=>unit.available);
 const interiors=new Map();
 let scenesWithShadows=new WeakSet();
-let quality=1, lastFrameTime=0, slowFrames=0;
+let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
 let renderer, camera, city, scene, unit=null, active=0, layout=null;
 let pose, goal, frame=0, tooltipTimer, flight=null;
@@ -57,37 +57,42 @@ function placeCamera(view){
 }
 function render(time){
   frame=0;
-  if(flight){adjustQuality(time);advanceFlight(time);return;}
+  if(flight){advanceFlight(time);return;}
   let moving=false;
   for(const key of Object.keys(goal)){
     const d=goal[key]-pose[key];
     if(Math.abs(d)>.0007){pose[key]+=d*.19;moving=true;}
     else pose[key]=goal[key];
   }
-  if(moving)adjustQuality(time);
+  prepareFrame(time,moving);
   placeCamera(pose);
   renderer.render(scene,camera);
   if(moving)draw();
-  else{lastFrameTime=0;slowFrames=0;}
 }
-function adjustQuality(time){
-  const elapsed=lastFrameTime?time-lastFrameTime:0;
-  lastFrameTime=time;
-  if(elapsed>500||elapsed<28){slowFrames=0;return;}
-  if(++slowFrames<7||quality<=.60)return;
-  slowFrames=0;
-  quality=Math.max(.60,quality*.82);
-  resize();
+function prepareFrame(time,moving){
+  if(moving){
+    const elapsed=lastFrameTime?time-lastFrameTime:0;
+    lastFrameTime=time;
+    slowFrames=elapsed>=28&&elapsed<=500?slowFrames+1:0;
+    if(slowFrames>=7){
+      motionQuality=Math.max(.60,motionQuality*.82);
+      slowFrames=0;
+    }
+  }else{
+    lastFrameTime=0;
+    slowFrames=0;
+  }
+  resize(moving);
 }
-function resize(){
+function resize(moving){
   const {clientWidth:w,clientHeight:h}=viewport;
   if(!w||!h)return;
-  const ratio=quality*Math.min(devicePixelRatio,1.2,Math.sqrt(1100000/(w*h)));
+  const idleRatio=Math.min(devicePixelRatio,1.65,Math.sqrt(2200000/(w*h)));
+  const ratio=moving?Math.min(idleRatio,motionQuality*Math.min(devicePixelRatio,1.2,Math.sqrt(1100000/(w*h)))):idleRatio;
   if(w===viewWidth&&h===viewHeight&&ratio===pixelRatio)return;
   viewWidth=w;viewHeight=h;pixelRatio=ratio;
   camera.aspect=w/h;camera.updateProjectionMatrix();
   renderer.setDrawingBufferSize(w,h,ratio);
-  draw();
 }
 function swap(next){
   scene=next;
@@ -162,6 +167,7 @@ function advanceFlight(time){
       $('back').focus({preventScroll:true});
     }
   }
+  prepareFrame(time,!!flight);
   renderer.render(scene,camera);
   if(flight)draw();
 }
@@ -288,7 +294,8 @@ try{
   camera=new T.PerspectiveCamera(40,1,.055,350);
   viewport.append(renderer.domElement);
   city=makeCity();swap(city.scene);setCamera(cityPose(),true);
-  new ResizeObserver(resize).observe(viewport);resize();
+  new ResizeObserver(draw).observe(viewport);
+  resize(false);
   floorPlan=makeFloorPlan($('plan'),rooms,setRoom);
   installControls();
   $('availableCount').textContent=available.length;
