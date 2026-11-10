@@ -15,7 +15,6 @@ let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
 let renderer, usingWebGPU=false, camera, city, scene, unit=null, active=0, layout=null;
 let pose, goal, frame=0, tooltipTimer, flight=null;
-let roomPreview=false, refinementTimer;
 const veil=$('veil');
 const ray=new T.Raycaster(), cursor=new T.Vector2();
 const pointers=new Map();
@@ -66,11 +65,7 @@ function render(time){
     if(Math.abs(d)>.0007){pose[key]+=d*.19;moving=true;}
     else pose[key]=goal[key];
   }
-  if(roomPreview){
-    roomPreview=false;
-    resize(true,650000);
-    refinementTimer=setTimeout(draw,90);
-  }else prepareFrame(time,moving);
+  prepareFrame(time,moving);
   placeCamera(pose);
   renderer.render(scene,camera);
   if(moving)draw();
@@ -90,11 +85,16 @@ function prepareFrame(time,moving){
   }
   resize(moving);
 }
-function resize(moving, motionPixels=1100000){
+function resize(moving){
   const {clientWidth:w,clientHeight:h}=viewport;
   if(!w||!h)return;
   const idleRatio=Math.min(Math.max(1.18,devicePixelRatio),1.8,Math.sqrt(2800000/(w*h)));
-  const ratio=moving?Math.min(idleRatio,motionQuality*Math.min(devicePixelRatio,1.2,Math.sqrt(motionPixels/(w*h)))):idleRatio;
+  // Keep the same drawing buffer when changing rooms or looking around indoors.
+  const ratio=unit
+    ? Math.min(devicePixelRatio,1.25,Math.sqrt(1050000/(w*h)))
+    : moving
+      ? Math.min(idleRatio,motionQuality*Math.min(devicePixelRatio,1.2,Math.sqrt(1100000/(w*h))))
+      : idleRatio;
   if(w===viewWidth&&h===viewHeight&&ratio===pixelRatio)return;
   viewWidth=w;viewHeight=h;pixelRatio=ratio;
   camera.aspect=w/h;camera.updateProjectionMatrix();
@@ -133,38 +133,41 @@ function setRoom(index,initial=false){
   $('step').textContent=rooms[active].name;
   setScene('');
   clearTooltip();
-  clearTimeout(refinementTimer);
-  roomPreview=true;
   setCamera(roomPose(active),true);
 }
-async function preloadInteriors(){
+function preloadInteriors(){
   const variants=[...new Map(available.map(unit=>[unit.variant,unit])).values()];
-  for(const [index,chosen] of variants.entries()){
-    status.textContent=`Carregando interiores (${index+1}/${variants.length})…`;
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    resize(true,180000);
-
-    const interior=makeInterior(chosen);
-    const previewCamera=camera.clone();
-    const room=rooms[0], transform=layoutFor(chosen);
-    previewCamera.position.set(...transform.point(room.eye));
-    previewCamera.lookAt(...transform.point(room.target));
-
-    // Submit every material in a real frame, including rooms outside the initial view.
-    const meshes=[];
-    interior.traverse(object=>{
-      if(!object.isMesh||!object.frustumCulled)return;
-      if(object.isInstancedMesh)object.computeBoundingSphere();
-      object.frustumCulled=false;
-      meshes.push(object);
-    });
-    swap(interior);
-    try{
-      renderer.render(interior,previewCamera);
-    }finally{
-      for(const mesh of meshes)mesh.frustumCulled=true;
+  const previewCamera=camera.clone();
+  const room=rooms[0];
+  // Prepare materials on the real framebuffer, but shade only a small area.
+  renderer.setScissor(0,0,96,64);
+  renderer.setScissorTest(true);
+  try{
+    for(const chosen of variants){
+      const interior=makeInterior(chosen);
+      const transform=layoutFor(chosen);
+      previewCamera.position.set(...transform.point(room.eye));
+      previewCamera.lookAt(...transform.point(room.target));
+      const meshes=[];
+      interior.traverse(object=>{
+        if(!object.isMesh||!object.frustumCulled)return;
+        if(object.isInstancedMesh)object.computeBoundingSphere();
+        object.frustumCulled=false;
+        meshes.push(object);
+      });
+      swap(interior);
+      try{
+        renderer.render(interior,previewCamera);
+      }finally{
+        for(const mesh of meshes)mesh.frustumCulled=true;
+      }
+      interiors.set(chosen.variant,interior);
     }
-    interiors.set(chosen.variant,interior);
+  }finally{
+    renderer.setScissorTest(false);
+    renderer.setScissor(0,0,viewWidth,viewHeight);
+    swap(city.scene);
+    renderer.render(scene,camera);
   }
 }
 function enterUnit(chosen){
@@ -214,8 +217,6 @@ function openUnit(chosen,windowHit){
   draw();
 }
 function goBack(){
-  roomPreview=false;
-  clearTimeout(refinementTimer);
   flight=null;veil.style.opacity=0;
   unit=null;swap(city.scene);
   document.body.classList.remove('inside');
@@ -340,19 +341,18 @@ try{
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;renderer.shadowMap.autoUpdate=false;
   camera=new T.PerspectiveCamera(40,1,.055,350);
   const canvas=renderer.domElement;
-  canvas.style.visibility='hidden';
   viewport.append(canvas);
   city=makeCity();
-  await preloadInteriors();
-  status.textContent='Finalizando a maquete…';
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   swap(city.scene);
   goal=cityPose();
   pose={...goal};
   resize(false);
   placeCamera(pose);
   renderer.render(scene,camera);
-  if(usingWebGPU)await renderer.backend.device.queue.onSubmittedWorkDone();
+
+  status.textContent='Preparando os apartamentos…';
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  preloadInteriors();
 
   floorPlan=makeFloorPlan($('plan'),rooms,setRoom);
   installControls();
@@ -361,7 +361,6 @@ try{
     const option=document.createElement('option');option.value=item.id;
     option.textContent=`Unidade ${item.id} · ${item.floor}º andar`;select.append(option);
   }
-  canvas.style.visibility='';
   select.disabled=false;
   status.hidden=true;
   new ResizeObserver(draw).observe(viewport);
