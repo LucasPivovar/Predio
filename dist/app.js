@@ -1,15 +1,16 @@
 import * as T from './vendor/three.module.js';
-import {makeCity,units} from './city.mjs';
-import {makeInterior,layoutFor,rooms} from './interior.mjs';
+import {makeCity,units} from './city.js';
+import {makeInterior,layoutFor,rooms} from './interior.js';
 
-import {makeFloorPlan} from './floorplan.mjs';
+import {makeFloorPlan} from './floorplan.js';
 
 const $=id=>document.getElementById(id);
 const viewport=$('viewport'), tooltip=$('tooltip'), select=$('unitSelect');
 const status=$('status'), reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const available=units.filter(unit=>unit.available);
 const interiors=new Map();
-const scenesWithShadows=new WeakSet();
+let scenesWithShadows=new WeakSet();
+let quality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
 let renderer, camera, city, scene, unit=null, active=0, layout=null;
 let pose, goal, frame=0, tooltipTimer, flight=null;
@@ -56,21 +57,32 @@ function placeCamera(view){
 }
 function render(time){
   frame=0;
-  if(flight){advanceFlight(time);return;}
+  if(flight){adjustQuality(time);advanceFlight(time);return;}
   let moving=false;
   for(const key of Object.keys(goal)){
     const d=goal[key]-pose[key];
     if(Math.abs(d)>.0007){pose[key]+=d*.19;moving=true;}
     else pose[key]=goal[key];
   }
+  if(moving)adjustQuality(time);
   placeCamera(pose);
   renderer.render(scene,camera);
   if(moving)draw();
+  else{lastFrameTime=0;slowFrames=0;}
+}
+function adjustQuality(time){
+  const elapsed=lastFrameTime?time-lastFrameTime:0;
+  lastFrameTime=time;
+  if(elapsed>500||elapsed<28){slowFrames=0;return;}
+  if(++slowFrames<7||quality<=.60)return;
+  slowFrames=0;
+  quality=Math.max(.60,quality*.82);
+  resize();
 }
 function resize(){
   const {clientWidth:w,clientHeight:h}=viewport;
   if(!w||!h)return;
-  const ratio=Math.min(devicePixelRatio,1.4,Math.sqrt(1600000/(w*h)));
+  const ratio=quality*Math.min(devicePixelRatio,1.2,Math.sqrt(1100000/(w*h)));
   if(w===viewWidth&&h===viewHeight&&ratio===pixelRatio)return;
   viewWidth=w;viewHeight=h;pixelRatio=ratio;
   camera.aspect=w/h;camera.updateProjectionMatrix();
@@ -269,7 +281,7 @@ function installControls(){
 }
 
 try{
-  renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+  renderer=new T.WebGLRenderer({antialias:false,powerPreference:'high-performance'});
   renderer.outputColorSpace=T.SRGBColorSpace;
   renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;renderer.shadowMap.autoUpdate=false;
@@ -286,7 +298,13 @@ try{
   }
   status.hidden=true;
   renderer.domElement.addEventListener('webglcontextlost',()=>{
-    status.textContent='A renderização 3D foi interrompida. Recarregue a página para continuar.';status.hidden=false;
+    status.textContent='Reconectando a renderização 3D…';status.hidden=false;
+  });
+  renderer.domElement.addEventListener('webglcontextrestored',()=>{
+    scenesWithShadows=new WeakSet();
+    swap(scene);
+    status.hidden=true;
+    draw();
   });
 }catch(error){
   status.textContent='A maquete precisa de um navegador com WebGL 2 habilitado.';

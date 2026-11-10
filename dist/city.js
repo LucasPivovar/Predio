@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.js';
-import {Builder,glow,grain,material,seeded,lights,lamp} from './model.mjs';
+import {Builder,glow,grain,material,seeded,lights,lamp,skylineMaterial} from './model.js';
 
 export const units = Array.from({length:14},(_,i)=>Array.from({length:3},(_,j)=>({
   id:String((i+1)*100+j+1),floor:i+1,column:j,available:(i*7+j*3+2)%11<4,
@@ -14,9 +14,13 @@ const road=grain('#272232','asfalto'), paving=grain('#514453','calçada'), hedge
 const ground=grain('#33243d','solo'), paint=material('#8c7081'), hitMat=new T.MeshBasicMaterial({visible:false});
 const foliage=['#26423a','#395243','#4a5650'].map(color=>material(color));
 const cityColors=['#4d3b57','#564158','#4d415b','#59445c','#473850'].map(color=>material(color));
-const cityGlass=['#6f536d','#524563','#87707f','#523d59'].map(color=>glow(color,.22));
+const skyline=['#aa8eaf','#ae8ca9','#9e91b7','#b395b0','#9282a2'].map(skylineMaterial);
 
-function tree(b,x,z,size=1){
+function tree(b,x,z,size=1,distant=false){
+  if(distant){
+    b.orb(x,1.23*size,z,1.05*size,1.31*size,1.05*size,foliage[0],false);
+    return;
+  }
   b.round(x,.8*size,z,.18*size,1.6*size,.18*size,'#59434b');
   for(let i=0;i<4;i++){
     b.orb(x+Math.cos(i*2.4)*.43*size,(1.43+i*.16)*size,z+Math.sin(i*2.4)*.43*size,.85*size,.97*size,.85*size,foliage[i%3]);
@@ -56,7 +60,7 @@ export function makeCity(){
     const cx=x*28,cz=z*28;
     b.box(cx,.12,cz,20.8,.28,20.8,paving,0,false);
     for(const side of [-1,1]){
-      tree(b,cx+side*9.2,cz+8.8,.83+random()*.44);
+      tree(b,cx+side*9.2,cz+8.8,.83+random()*.44,Math.abs(x)+Math.abs(z)>1);
       streetlamp(b,cx+side*9.7,cz+side*9.5);
     }
     if(x===0&&z===0)continue;
@@ -66,21 +70,10 @@ export function makeCity(){
       const bz=cz+(j>1?4.4:-4.4)+(random()-.5)*1.2;
       const w=4.8+random()*2.9,d=4.9+random()*2.7;
       const h=3.2+random()*(Math.abs(x)+Math.abs(z)===1?9:15.5);
-      b.box(bx,.23+h/2,bz,w,h,d,cityColors[Math.floor(random()*cityColors.length)],0,false);
+      b.box(bx,.23+h/2,bz,w,h,d,skyline[Math.floor(random()*skyline.length)],0,false);
       b.box(bx,h+.30,bz,w+.2,.18,d+.2,dark,0,false);
       b.box(bx+.7,h+.56,bz-.65,w*.34,.47,d*.32,cityColors[j],0,false);
-      for(let y=1.3;y<h-.5;y+=1.22){
-        for(let a=-w/2+.55;a<w/2-.32;a+=.93){
-          const m=random()>.81?cityGlass[2]:cityGlass[Math.floor(random()*cityGlass.length)];
-          b.panel(bx+a,y,bz+d/2+.017,.37,.46,m);
-          b.panel(bx+a,y,bz-d/2-.017,.37,.46,m,Math.PI);
-        }
-        for(let a=-d/2+.55;a<d/2-.32;a+=.95){
-          const m=cityGlass[Math.floor(random()*cityGlass.length)];
-          b.panel(bx+w/2+.017,y,bz+a,.37,.44,m,Math.PI/2);
-          b.panel(bx-w/2-.017,y,bz+a,.37,.44,m,-Math.PI/2);
-        }
-      }
+
     }
   }
   for(const [x,z,c,turn] of [[14,4,'#79636c',false],[-15,4,'#69547e',false],[7,15,'#ae705e',true],[-7,13,'#867686',true],[33,42,'#927984',true],[42,4,'#98796c',false],[-15,-7,'#84758b',false],[20,-15,'#877668',true],[-26,43,'#a37b7b',true]])car(b,x,z,c,turn);

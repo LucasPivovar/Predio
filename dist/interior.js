@@ -1,5 +1,5 @@
 import * as T from './vendor/three.module.js';
-import {Builder,glow,grain,material,lights,lamp,seeded} from './model.mjs';
+import {Builder,glow,grain,material,lights,lamp,seeded,skylineMaterial} from './model.js';
 
 export const rooms = [
   {name:'Sala',box:[-7,0,14,3.5],eye:[-1.41,1.57,2.95],target:[-4.25,1.12,.90],fov:65},
@@ -226,26 +226,15 @@ function terrace(b,m){
 
 function cityBackdrop(scene){
   const b=new Builder(scene), random=seeded(41);
-  const facades=['#2a2237','#332a45','#3b304c','#272438'].map(color=>new T.MeshBasicMaterial({color}));
-  const windows=['#b8845d','#745978','#d4a581','#55496a'].map(color=>new T.MeshBasicMaterial({color}));
+  const facades=['#816f98','#8b749f','#967da7','#706d96'].map(skylineMaterial);
+  const rooftops=['#2a2237','#332a45','#3b304c','#272438'].map(color=>new T.MeshBasicMaterial({color}));
   for(let i=0;i<85;i++){
     const angle=i*2.39996, distance=15+random()*66;
     const x=Math.cos(angle)*distance,z=Math.sin(angle)*distance;
     const top=1.5+random()*18-distance*.11, w=2+random()*4.7,d=2.7+random()*4.5;
     b.box(x,top-14,z,w,28,d,facades[i%facades.length],0,false);
-    b.box(x+.13,top+.27,z-.21,w*.42,.54,d*.4,facades[(i+1)%4],0,false);
-    for(let y=top-.77;y>Math.max(top-15,-18);y-=1.19){
-      for(let dx=-w/2+.42;dx<w/2-.23;dx+=.74){
-        if(random()<.36)continue;
-        const mat=windows[Math.floor(random()*windows.length)];
-        for(const sign of [-1,1])b.panel(x+dx,y,z+sign*(d/2+.014),.29,.49,mat,sign===1?0:Math.PI);
-      }
-      for(let dz=-d/2+.41;dz<d/2-.22;dz+=.79){
-        if(random()<.41)continue;
-        const mat=windows[Math.floor(random()*windows.length)];
-        for(const sign of [-1,1])b.panel(x+sign*(w/2+.014),y,z+dz,.27,.46,mat,sign*Math.PI/2);
-      }
-    }
+    b.box(x+.13,top+.27,z-.21,w*.42,.54,d*.4,rooftops[(i+1)%4],0,false);
+
   }
   b.finish();
 }
