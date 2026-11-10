@@ -15,6 +15,7 @@ let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
 let renderer, usingWebGPU=false, camera, city, scene, unit=null, active=0, layout=null;
 let pose, goal, frame=0, tooltipTimer, flight=null;
+let roomPreview=false, refinementTimer;
 const veil=$('veil');
 const ray=new T.Raycaster(), cursor=new T.Vector2();
 const pointers=new Map();
@@ -65,7 +66,11 @@ function render(time){
     if(Math.abs(d)>.0007){pose[key]+=d*.19;moving=true;}
     else pose[key]=goal[key];
   }
-  prepareFrame(time,moving);
+  if(roomPreview){
+    roomPreview=false;
+    resize(true,650000);
+    refinementTimer=setTimeout(draw,90);
+  }else prepareFrame(time,moving);
   placeCamera(pose);
   renderer.render(scene,camera);
   if(moving)draw();
@@ -128,12 +133,9 @@ function setRoom(index,initial=false){
   $('step').textContent=rooms[active].name;
   setScene('');
   clearTooltip();
+  clearTimeout(refinementTimer);
+  roomPreview=true;
   setCamera(roomPose(active),true);
-  if(!initial&&!reduced){
-    const canvas=renderer.domElement;
-    canvas.getAnimations().forEach(animation=>animation.cancel());
-    canvas.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'ease-out'});
-  }
 }
 async function preloadInteriors(){
   const variants=[...new Map(available.map(unit=>[unit.variant,unit])).values()];
@@ -178,36 +180,22 @@ function enterUnit(chosen){
 }
 const smooth=t=>t*t*(3-2*t);
 function advanceFlight(time){
-  const elapsed=time-flight.start;
-  if(!unit){
-    const t=clamp(elapsed/1100,0,1);
-    camera.position.copy(flight.path.getPoint(smooth(t)));
-    camera.lookAt(flight.look.clone().lerp(flight.inside, smooth(t)));
-    veil.style.opacity=smooth(clamp((t-.86)/.14,0,1));
-    if(t===1){
-      enterUnit(flight.chosen);
-      flight.start=time;
-      flight.destination={...goal};
-      const [x,y,z]=layout.point([-1.41,1.57,4.55]);
-      flight.arrival={x,y,z,yaw:Math.PI,pitch:-.08,radius:70};
-    }
+  const t=clamp((time-flight.start)/1100,0,1);
+  if(t===1){
+    const chosen=flight.chosen;
+    flight=null;
+    veil.style.opacity=0;
+    enterUnit(chosen);
+    $('back').focus({preventScroll:true});
+    return;
   }
-  if(unit){
-    const t=clamp((time-flight.start)/480,0,1), eased=smooth(t);
-    const from=flight.arrival,to=flight.destination;
-    const view={};
-    for(const key of Object.keys(to))view[key]=T.MathUtils.lerp(from[key],to[key],eased);
-    view.yaw=from.yaw+Math.atan2(Math.sin(to.yaw-from.yaw),Math.cos(to.yaw-from.yaw))*eased;
-    placeCamera(view);
-    veil.style.opacity=1-smooth(clamp(t/.44,0,1));
-    if(t===1){
-      flight=null;
-      $('back').focus({preventScroll:true});
-    }
-  }
-  prepareFrame(time,!!flight);
+  const eased=smooth(t);
+  camera.position.copy(flight.path.getPoint(eased));
+  camera.lookAt(flight.look.clone().lerp(flight.inside,eased));
+  veil.style.opacity=smooth(clamp((t-.86)/.14,0,1));
+  prepareFrame(time,true);
   renderer.render(scene,camera);
-  if(flight)draw();
+  draw();
 }
 function openUnit(chosen,windowHit){
   if(!chosen?.available||flight||unit)return;
@@ -226,6 +214,8 @@ function openUnit(chosen,windowHit){
   draw();
 }
 function goBack(){
+  roomPreview=false;
+  clearTimeout(refinementTimer);
   flight=null;veil.style.opacity=0;
   unit=null;swap(city.scene);
   document.body.classList.remove('inside');
