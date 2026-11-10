@@ -131,12 +131,12 @@ export function seeded(initial){
   let n=initial;
   return ()=>{n=(Math.imul(n,1664525)+1013904223)>>>0;return n/4294967296;};
 }
-export function lights(scene,{sky,ground,ambient,key,intensity,position,area,shadow=true}){
+export function lights(scene,{sky,ground,ambient,key,intensity,position,area,shadow=true,shadowSize=2048}){
   scene.add(new T.HemisphereLight(sky,ground,ambient));
   const sun=new T.DirectionalLight(key,intensity);
   sun.position.set(...position);sun.castShadow=shadow;
   if(shadow){
-    sun.shadow.mapSize.set(2048,2048);
+    sun.shadow.mapSize.set(shadowSize,shadowSize);
     Object.assign(sun.shadow.camera,{left:-area,right:area,top:area,bottom:-area,near:1,far:180});
     sun.shadow.normalBias=.065;sun.shadow.bias=-.00015;sun.shadow.radius=2;
   }

@@ -268,7 +268,7 @@ export function makeInterior(unit){
   scene.background=new T.Color('#302339');scene.fog=new T.FogExp2('#302339',.028);
   cityBackdrop(scene);
   apartment.scale.set(layout.width*layout.flip,1,layout.depth);scene.add(apartment);
-  lights(scene,{sky:'#e1dbfb',ground:'#98705a',ambient:1.11,key:'#ffdec0',intensity:1.76,position:[3,10,7],area:11});
+  lights(scene,{sky:'#e1dbfb',ground:'#98705a',ambient:1.11,key:'#ffdec0',intensity:1.76,position:[3,10,7],area:11,shadowSize:1024});
   const fill=new T.DirectionalLight('#9a92dd',.34);fill.position.set(-9,7,-8);scene.add(fill);
   for(const [x,z,power,y] of [[-4.35,1.25,19,2.63],[3.65,1.9,14,2.54],[4.1,-1.86,17,2.56],[-4.5,-3.2,18,2.62],[-.36,-2.55,13,2.6],[-6.4,1.05,5,1.56],[2.35,4.37,6,2.48]]){
     const [a,,c]=layout.point([x,0,z]);lamp(scene,'#ffcc98',power,a,y,c,7);

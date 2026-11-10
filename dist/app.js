@@ -10,6 +10,8 @@ const viewport=$('viewport'), tooltip=$('tooltip'), select=$('unitSelect');
 const status=$('status'), reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const available=units.filter(unit=>unit.available);
 const interiors=new Map();
+const preparedInteriors=new Map();
+let pendingVisit=null;
 let scenesWithShadows=new WeakSet();
 let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
@@ -135,9 +137,61 @@ function setRoom(index,initial=false){
     canvas.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'ease-out'});
   }
 }
+function prepareInterior(chosen){
+  const key=chosen.variant;
+  if(preparedInteriors.has(key))return preparedInteriors.get(key);
+  const preparation=Promise.resolve().then(async()=>{
+    const interior=makeInterior(chosen);
+    interior.updateMatrixWorld(true);
+    const previewCamera=camera.clone();
+    const room=rooms[0], transform=layoutFor(chosen);
+    previewCamera.position.set(...transform.point(room.eye));
+    previewCamera.lookAt(...transform.point(room.target));
+    previewCamera.updateMatrixWorld(true);
+    const meshes=[];
+    interior.traverse(object=>{
+      if(!object.isMesh)return;
+      if(object.isInstancedMesh)object.computeBoundingSphere();
+      if(object.frustumCulled){
+        object.frustumCulled=false;
+        meshes.push(object);
+      }
+    });
+    try{
+      await renderer.compileAsync(interior,previewCamera);
+    }catch(error){
+      console.warn('A preparação dos materiais será concluída durante a visita.',error);
+    }finally{
+      for(const mesh of meshes)mesh.frustumCulled=true;
+    }
+    interiors.set(key,interior);
+  }).catch(error=>{
+    preparedInteriors.delete(key);
+    throw error;
+  });
+  preparedInteriors.set(key,preparation);
+  return preparation;
+}
+function preloadInteriors(){
+  const variants=[...new Map(available.map(unit=>[unit.variant,unit])).values()];
+  function next(){
+    if(pendingVisit||flight||unit||pointers.size||frame){
+      setTimeout(next,350);
+      return;
+    }
+    const chosen=variants.shift();
+    if(!chosen)return;
+    prepareInterior(chosen).catch(console.warn).finally(schedule);
+  }
+  function schedule(){
+    if(!variants.length)return;
+    if('requestIdleCallback' in window)window.requestIdleCallback(next);
+    else setTimeout(next,200);
+  }
+  schedule();
+}
 function enterUnit(chosen){
   const key=chosen.variant;
-  if(!interiors.has(key))interiors.set(key,makeInterior(chosen));
   unit=chosen;layout=layoutFor(unit);swap(interiors.get(key));
   $('overview').hidden=true;$('tour').hidden=false;
   document.body.classList.add('inside');
@@ -151,7 +205,7 @@ const smooth=t=>t*t*(3-2*t);
 function advanceFlight(time){
   const elapsed=time-flight.start;
   if(!unit){
-    const t=clamp(elapsed/1720,0,1);
+    const t=clamp(elapsed/1100,0,1);
     camera.position.copy(flight.path.getPoint(smooth(t)));
     camera.lookAt(flight.look.clone().lerp(flight.inside, smooth(t)));
     veil.style.opacity=smooth(clamp((t-.86)/.14,0,1));
@@ -164,7 +218,7 @@ function advanceFlight(time){
     }
   }
   if(unit){
-    const t=clamp((time-flight.start)/920,0,1), eased=smooth(t);
+    const t=clamp((time-flight.start)/480,0,1), eased=smooth(t);
     const from=flight.arrival,to=flight.destination;
     const view={};
     for(const key of Object.keys(to))view[key]=T.MathUtils.lerp(from[key],to[key],eased);
@@ -180,8 +234,26 @@ function advanceFlight(time){
   renderer.render(scene,camera);
   if(flight)draw();
 }
-function openUnit(chosen,windowHit){
-  if(!chosen?.available||flight||unit)return;
+async function openUnit(chosen,windowHit){
+  if(!chosen?.available||pendingVisit||flight||unit)return;
+  const visit={};
+  pendingVisit=visit;
+  $('visit').disabled=true;
+  if(!interiors.has(chosen.variant)){
+    setScene('Preparando o apartamento…');
+    try{
+      await prepareInterior(chosen);
+    }catch(error){
+      if(pendingVisit!==visit)return;
+      pendingVisit=null;
+      $('visit').disabled=!select.value;
+      setScene('Não foi possível abrir o apartamento. Tente novamente.');
+      console.error(error);
+      return;
+    }
+  }
+  if(pendingVisit!==visit)return;
+  pendingVisit=null;
   clearTooltip();
   if(reduced){enterUnit(chosen);$('back').focus({preventScroll:true});return;}
   const hit=windowHit??city.hits.find(mesh=>mesh.userData.unit===chosen&&mesh.position.z>5&&Math.abs(mesh.position.x)<6);
@@ -197,7 +269,7 @@ function openUnit(chosen,windowHit){
   draw();
 }
 function goBack(){
-  flight=null;veil.style.opacity=0;
+  pendingVisit=null;flight=null;veil.style.opacity=0;
   unit=null;swap(city.scene);
   document.body.classList.remove('inside');
   $('hint').querySelector('span').innerHTML='Arraste para girar <b>·</b> Role para aproximar';
@@ -277,13 +349,13 @@ function installControls(){
   $('zoomIn').addEventListener('click',()=>zoom(.81));
   $('zoomOut').addEventListener('click',()=>zoom(1.24));
   $('reset').addEventListener('click',()=>{if(!flight)setCamera(unit?roomPose(active):cityPose());});
-  select.addEventListener('change',()=>$('visit').disabled=!!flight||!select.value);
+  select.addEventListener('change',()=>$('visit').disabled=!!pendingVisit||!!flight||!select.value);
   $('visit').addEventListener('click',()=>openUnit(available.find(item=>item.id===select.value)));
   $('back').addEventListener('click',goBack);
   $('prev').addEventListener('click',()=>setRoom(active-1));
   $('next').addEventListener('click',()=>setRoom(active+1));
   document.addEventListener('keydown',event=>{
-    if(!unit&&!flight)return;
+    if(!unit&&!flight&&!pendingVisit)return;
     if(event.key==='Escape')goBack();
     else if(flight)return;
     else if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
@@ -332,6 +404,7 @@ try{
     option.textContent=`Unidade ${item.id} · ${item.floor}º andar`;select.append(option);
   }
   status.hidden=true;
+  requestAnimationFrame(()=>setTimeout(preloadInteriors,300));
   renderer.domElement.addEventListener('webglcontextlost',()=>{
     status.textContent='Reconectando a renderização 3D…';status.hidden=false;
   });
