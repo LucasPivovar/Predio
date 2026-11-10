@@ -1,4 +1,4 @@
-import * as T from './vendor/three.module.js';
+import * as T from './vendor/three.core.js';
 
 const matrix = new T.Matrix4(), rotation = new T.Quaternion(), euler = new T.Euler();
 const pos = new T.Vector3(), scale = new T.Vector3();
@@ -46,9 +46,43 @@ export function skylineMaterial(color){
   }
   return new T.MeshBasicMaterial({color,map:facadeTexture});
 }
+const grainTypes=new WeakMap(), nodeGrains=new WeakMap();
+let gpuMaterials;
+export function useWebGPUMaterials(module){
+  gpuMaterials=module;
+}
+function renderMaterial(material){
+  const type=grainTypes.get(material);
+  if(!gpuMaterials||!type)return material;
+  if(nodeGrains.has(material))return nodeGrains.get(material);
+
+  const {MeshStandardNodeMaterial,TSL}=gpuMaterials;
+  const {positionWorld:p,float,sin,fract,floor,dot,vec3,pow,materialColor}=TSL;
+  let pattern;
+  if(type==='madeira'){
+    const fine=sin(p.x.mul(144).add(sin(p.z.mul(3.7).add(p.y.mul(3.2))).mul(1.5)));
+    const coarse=sin(p.x.mul(43).add(sin(p.z.mul(7.2).add(p.y.mul(4.8)))));
+    pattern=fine.mul(.045).add(coarse.mul(.035)).add(.97);
+  }else if(type==='marmore'){
+    const veins=p.x.mul(9.2).add(p.z.mul(5.9)).add(p.y.mul(6))
+      .add(sin(p.z.mul(8.2).add(p.x.mul(2.3))).mul(1.8))
+      .add(sin(p.x.mul(38).add(p.z.mul(24))).mul(.35));
+    pattern=float(.99).sub(pow(sin(veins).mul(.5).add(.5),14).mul(.24));
+  }else if(type==='tecido'){
+    pattern=sin(p.x.add(p.y).mul(340)).mul(sin(p.z.add(p.y).mul(310))).mul(.035).add(.96);
+  }else{
+    pattern=fract(sin(dot(floor(p.mul(135)),vec3(12.9898,78.233,51.13))).mul(43758.5453)).mul(.08).add(.96);
+  }
+  const nodeMaterial=new MeshStandardNodeMaterial({color:material.color,roughness:material.roughness});
+  nodeMaterial.colorNode=materialColor.mul(pattern);
+  nodeGrains.set(material,nodeMaterial);
+  return nodeMaterial;
+}
+
 export const glow = (color,power=.9) => material(color,{emissive:color,emissiveIntensity:power});
 export function grain(color, type) {
   const mat = material(color,{name:type});
+  grainTypes.set(mat,type);
   mat.onBeforeCompile = shader => {
     shader.vertexShader = 'varying vec3 vGrain;\n' + shader.vertexShader.replace('#include <begin_vertex>',`
       #include <begin_vertex>
@@ -86,7 +120,7 @@ export class Builder {
   orb(x,y,z,w,h,d,mat,shadow=true){this.shape(ball,mat,x,y,z,w,h,d,0,0,0,shadow);}
   finish(){
     for(const {geometry,actual,shadow,items} of this.batches.values()){
-      const mesh=new T.InstancedMesh(geometry,actual,items.length);
+      const mesh=new T.InstancedMesh(geometry,renderMaterial(actual),items.length);
       items.forEach((item,index)=>mesh.setMatrixAt(index,item));
       mesh.castShadow=shadow;mesh.receiveShadow=true;
       this.scene.add(mesh);

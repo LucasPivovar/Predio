@@ -1,4 +1,4 @@
-import * as T from './vendor/three.module.js';
+import * as T from './vendor/three.core.js';
 import {Builder,glow,grain,material,lights,lamp,seeded,skylineMaterial} from './model.js';
 
 export const rooms = [

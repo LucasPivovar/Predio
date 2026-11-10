@@ -1,7 +1,8 @@
-import * as T from './vendor/three.module.js';
+import * as T from './vendor/three.core.js';
 import {makeCity,units} from './city.js';
 import {makeInterior,layoutFor,rooms} from './interior.js';
 
+import {useWebGPUMaterials} from './model.js';
 import {makeFloorPlan} from './floorplan.js';
 
 const $=id=>document.getElementById(id);
@@ -12,7 +13,7 @@ const interiors=new Map();
 let scenesWithShadows=new WeakSet();
 let motionQuality=1, lastFrameTime=0, slowFrames=0;
 let viewWidth=0, viewHeight=0, pixelRatio=0;
-let renderer, camera, city, scene, unit=null, active=0, layout=null;
+let renderer, usingWebGPU=false, camera, city, scene, unit=null, active=0, layout=null;
 let pose, goal, frame=0, tooltipTimer, flight=null;
 const veil=$('veil');
 const ray=new T.Raycaster(), cursor=new T.Vector2();
@@ -97,7 +98,14 @@ function resize(moving){
 function swap(next){
   scene=next;
   if(!scenesWithShadows.has(scene)){
-    renderer.shadowMap.needsUpdate=true;
+    if(usingWebGPU){
+      scene.traverse(object=>{
+        if(object.isLight&&object.castShadow){
+          object.shadow.autoUpdate=false;
+          object.shadow.needsUpdate=true;
+        }
+      });
+    }else renderer.shadowMap.needsUpdate=true;
     scenesWithShadows.add(scene);
   }
 }
@@ -284,8 +292,30 @@ function installControls(){
   });
 }
 
+async function createRenderer(){
+  const options={antialias:true,powerPreference:'high-performance'};
+  if(navigator.gpu){
+    try{
+      const module=await import('./vendor/three.webgpu.js');
+      const gpu=new module.WebGPURenderer(options);
+      await gpu.init();
+      if(gpu.backend.isWebGPUBackend){
+        usingWebGPU=true;
+        useWebGPUMaterials(module);
+        return gpu;
+      }
+      gpu.dispose();
+    }catch(error){
+      console.warn('WebGPU indisponível. Tentando WebGL 2.',error);
+    }
+  }
+  const {WebGLRenderer}=await import('./vendor/three.module.js');
+  return new WebGLRenderer(options);
+}
+
 try{
-  renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+  renderer=await createRenderer();
+  renderer.domElement.dataset.renderer=usingWebGPU?'webgpu':'webgl2';
   renderer.outputColorSpace=T.SRGBColorSpace;
   renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.08;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;renderer.shadowMap.autoUpdate=false;
@@ -312,6 +342,6 @@ try{
     draw();
   });
 }catch(error){
-  status.textContent='A maquete precisa de um navegador com WebGL 2 habilitado.';
+  status.textContent='A maquete precisa de um navegador com WebGPU ou WebGL 2 habilitado.';
   console.error(error);
 }

@@ -1,4 +1,4 @@
-import * as T from './vendor/three.module.js';
+import * as T from './vendor/three.core.js';
 import {Builder,glow,grain,material,seeded,lights,lamp,skylineMaterial} from './model.js';
 
 export const units = Array.from({length:14},(_,i)=>Array.from({length:3},(_,j)=>({
