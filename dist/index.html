@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Explore a maquete de Altavia Residences e visite os apartamentos em 3D.">
+<title>Altavia Residences — Visita 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="tower" viewBox="0 0 24 24"><path d="M3 21h18M6 21V8l6-5v18M12 8l6 3v10M9 11v1m0 3v1m6-3v1m0 3v1"/></symbol>
+<symbol id="left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+<symbol id="right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+<symbol id="reset" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 2 6M4 5v6h6"/></symbol>
+<symbol id="icon-plan" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 11h8V4m0 16v-5h8"/></symbol>
+<symbol id="mouse" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="5"/><path d="M12 6v4"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+</defs></svg>
+<header class="mast"><div class="brand"><span class="brand-icon"><svg><use href="#tower"/></svg></span><div><strong>ALTAVIA</strong><small>RESIDENCES</small></div></div></header>
+<main>
+<aside class="panel">
+<section id="overview">
+<h1>Apartamentos</h1>
+<p class="intro">Clique em uma janela apagada para visitar o apartamento.</p>
+<div class="stats"><div><strong>14</strong><span>ANDARES</span></div><div><strong id="availableCount">—</strong><span>DISPONÍVEIS</span></div></div>
+<div class="legend"><h2>DISPONIBILIDADE</h2><div><i class="light off"></i> Janela apagada <span>Livre</span></div><div><i class="light on"></i> Janela iluminada <span>Ocupado</span></div></div>
+<label class="field" for="unitSelect">Apartamento</label><select id="unitSelect"><option value="">Escolha um apartamento</option></select>
+<button id="visit" class="primary" disabled>Visitar apartamento <svg><use href="#arrow"/></svg></button>
+</section>
+<section id="tour" hidden>
+<button id="back" class="back"><svg><use href="#left"/></svg> Voltar à maquete</button>
+<h1>Unidade <em id="unitTitle"></em></h1>
+<p id="unitInfo" class="intro"></p>
+<div class="floorplan"><h2><svg><use href="#icon-plan"/></svg> PLANTA BAIXA</h2><div id="plan"></div></div>
+<div class="pager"><button id="prev" class="square" aria-label="Cômodo anterior"><svg><use href="#left"/></svg></button><span id="step" aria-live="polite"></span><button id="next" class="square" aria-label="Próximo cômodo"><svg><use href="#right"/></svg></button></div>
+</section>
+</aside>
+<section class="stage" aria-label="Visualização em três dimensões">
+<div id="viewport"></div>
+<div id="veil" aria-hidden="true"></div>
+<div class="scene-label" id="sceneLabel"><span class="scene-dot"></span><div><strong id="sceneName">Vista da torre</strong><small id="sceneMeta"></small></div></div>
+<div class="tools" aria-label="Controles de câmera"><button id="zoomIn" class="square" aria-label="Aproximar" title="Aproximar"><svg><use href="#plus"/></svg></button><button id="zoomOut" class="square" aria-label="Afastar" title="Afastar"><svg><use href="#minus"/></svg></button><button id="reset" class="square" aria-label="Restaurar câmera" title="Restaurar câmera"><svg><use href="#reset"/></svg></button></div>
+<div id="hint" class="hint"><svg><use href="#mouse"/></svg><span>Arraste para girar <b>·</b> Role para aproximar</span></div>
+<div id="tooltip" class="tooltip" role="status" hidden></div>
+<p id="status" role="status" class="status">Preparando a maquete 3D…</p>
+</section>
+</main>
+<script type="module">import("./app.mjs").catch(error=>{document.querySelector("#status").textContent="Não foi possível carregar a maquete. Recarregue a página para tentar novamente.";console.error(error)});</script>
+</body>
+</html>
+
+
